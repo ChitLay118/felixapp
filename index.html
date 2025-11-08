@@ -14,8 +14,6 @@
         .bg-play-green { background-color: #008060; }
         .hover\:bg-active-blue-dark:hover { background-color: #005A9C; }
         .text-active-blue { color: #1a73e8; }
-        .bg-google-blue { background-color: #4285F4; }
-        .hover\:bg-google-blue-dark:hover { background-color: #357ae8; }
         .nav-category-btn.active { color: #1a73e8; font-weight: bold; border-top: 2px solid #1a73e8; margin-top: -2px; }
     </style>
 </head>
@@ -34,13 +32,13 @@
         } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
         import { 
             getAuth, onAuthStateChanged, 
-            GoogleAuthProvider, signInWithPopup, signOut 
+            signInAnonymously // Guest Login အတွက်
         } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-auth.js";
 
 
-        // Your web app's Firebase configuration
+        // Your web app's Firebase configuration - (သင့်ရဲ့ ကိုယ်ပိုင် Firebase Config ကို အစားထိုးထည့်သွင်းပါ)
         const firebaseConfig = {
-            apiKey: "AIzaSyAUL74mqVCIY1MMclrRhdVbY_VyP4lgQpY",
+            apiKey: "AIzaSyAUL74mqVCIY1MMclrRhdVbY_VyP4lgQpY", 
             authDomain: "waiappstore.firebaseapp.com",
             projectId: "waiappstore",
             storageBucket: "waiappstore.firebasestorage.app",
@@ -57,15 +55,21 @@
         const db = getFirestore(app);
         const auth = getAuth(app);
         
-        // Google Provider setup
-        const googleProvider = new GoogleAuthProvider(); 
-        
         // Global variables and constants
         let currentEditAppId = null; 
         const APP_COLLECTION_PATH = 'apps';
-        // Admin Email List - Admin ဝင်ခွင့်ပေးမည့် Gmail များကို ဤနေရာတွင် ထည့်သွင်းပါ။
-        const ADMIN_EMAILS = ["admin@waiappstore.com", "your.admin.email@gmail.com"]; 
         
+        // ADMIN CREDENTIALS (သင်သတ်မှတ်ထားသည့်အတိုင်း)
+        const ADMIN_NAME = 'felix'; 
+        const ADMIN_PASSWORD = '118234'; 
+        
+        // Custom User Info Management (Email/Password မသုံးတော့ဘဲ Name/Email ကို ဤနေရာတွင် သိမ်းပါမည်)
+        let customUserData = {
+            name: 'ဧည့်သည်',
+            email: 'guest@appstore.com',
+            isLoggedIn: false
+        };
+
         // Exporting to window for easy access
         window.db = db;
         window.auth = auth;
@@ -85,43 +89,87 @@
         const noResults = document.getElementById('noResults');
         const loginContainer = document.getElementById('loginContainer'); 
         const logoutContainer = document.getElementById('logoutContainer'); 
-        const profileEditSection = document.getElementById('profileEditSection'); 
-
+        const adminLoginContainer = document.getElementById('adminLoginContainer'); 
+        const userLoginModal = document.getElementById('userLoginModal'); 
+        const userLoginForm = document.getElementById('userLoginForm'); 
 
         // --------------------------------------------------------------------------------
-        // 2. AUTHENTICATION FUNCTIONS (Google Sign-in/out)
+        // 2. CUSTOM AUTHENTICATION FUNCTIONS (Name/Email Login)
         // --------------------------------------------------------------------------------
+        
+        // Anonymous Login (Firebase အတွက်) ကို အသုံးပြု၍ UID ရယူထားမည်
+        window.initAuth = async () => {
+            if (!auth.currentUser) {
+                try {
+                    await signInAnonymously(auth);
+                } catch (error) {
+                    console.error("Anonymous Sign-in Error: ", error);
+                }
+            }
+        }
+        
+        // Custom Login (Name/Email ဖြင့်)
+        window.userLogin = () => {
+            const nameInput = document.getElementById('loginNameInput').value.trim();
+            const emailInput = document.getElementById('loginEmailInput').value.trim();
 
-        // Google Sign In (Called by button click)
-        window.signInWithGoogle = async () => {
-            try {
-                // Pop-up ဖြင့် ဝင်ရောက်ခြင်း
-                await signInWithPopup(auth, googleProvider); 
-                window.showToast("Google ဖြင့် ဝင်ရောက်ခြင်း အောင်မြင်ပါသည်။", 'success');
-                profileModal.classList.add('hidden'); 
-            } catch (error) {
-                console.error("Google Sign-In Error: ", error);
-                window.showToast("Google ဖြင့် ဝင်ရောက်ရာတွင် အမှားဖြစ်ခဲ့သည်။", 'error');
+            if (!nameInput || !emailInput) {
+                window.showToast("နာမည်နှင့် Email လိပ်စာကို ဖြည့်သွင်းပါ။", 'error');
+                return;
+            }
+            
+            // Guest mode မှ Name/Email mode သို့ ပြောင်းလဲခြင်း
+            customUserData.name = nameInput;
+            customUserData.email = emailInput;
+            customUserData.isLoggedIn = true;
+            
+            userLoginModal.classList.add('hidden');
+            window.showToast("Login အောင်မြင်ပါသည်။", 'success');
+            window.updateProfileUI(); 
+        };
+        
+        // Custom Logout
+        window.userLogout = () => {
+            // Firebase Anonymous User ကို မဖျက်ဘဲ custom data ကို reset လုပ်သည်
+            customUserData.name = 'ဧည့်သည်';
+            customUserData.email = 'guest@appstore.com';
+            customUserData.isLoggedIn = false;
+            
+            window.showToast("အောင်မြင်စွာ ထွက်ပြီးပါပြီ။", 'info');
+            profileModal.classList.add('hidden');
+            window.updateProfileUI(); 
+        };
+        
+        // Custom Admin Login
+        window.adminLogin = () => {
+            const adminName = document.getElementById('adminNameInput').value.trim();
+            const adminPass = document.getElementById('adminPassInput').value.trim();
+
+            if (adminName === ADMIN_NAME && adminPass === ADMIN_PASSWORD) {
+                window.isAdmin = true;
+                document.getElementById('adminNameInput').value = '';
+                document.getElementById('adminPassInput').value = '';
+                window.showToast("Admin Login အောင်မြင်ပါသည်။", 'success');
+                window.updateProfileUI();
+            } else {
+                window.showToast("Admin Name သို့မဟုတ် Password မှားနေပါသည်။", 'error');
             }
         };
 
-        // Sign Out (Called by button click)
-        window.signOutUser = async () => {
-            try {
-                await signOut(auth);
-                window.showToast("အောင်မြင်စွာ ထွက်ပြီးပါပြီ။", 'info');
-                profileModal.classList.add('hidden');
-            } catch (error) {
-                console.error("Sign-Out Error: ", error);
-                window.showToast("ထွက်ရာတွင် အမှားဖြစ်ခဲ့သည်။", 'error');
-            }
+        // Custom Admin Logout
+        window.adminLogout = () => {
+            window.isAdmin = false;
+            window.showToast("Admin ထွက်ပြီးပါပြီ။", 'info');
+            window.updateProfileUI();
         };
 
 
         // --------------------------------------------------------------------------------
         // 3. CORE APPLICATION LOGIC (UI/Data)
         // --------------------------------------------------------------------------------
-
+        
+        // ... (window.filterApps, window.setView, window.setCategoryFilter, window.renderApps, window.openEditModal, window.handleAppClick functions are the same as before) ...
+        
         // Placeholder for filtering logic
         window.filterApps = () => {
             const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
@@ -131,8 +179,10 @@
             let filtered = window.allApps;
             
             // 1. Filter by View (All or Mine)
-            if (currentView === 'mine' && auth.currentUser) {
-                filtered = filtered.filter(app => app.submitterId === auth.currentUser.uid);
+            if (currentView === 'mine' && customUserData.isLoggedIn) {
+                // Custom User Login ဖြင့် UID ကို အသုံးပြု၍ စစ်ထုတ်သည်
+                const userUid = auth.currentUser ? auth.currentUser.uid : 'N/A';
+                filtered = filtered.filter(app => app.submitterId === userUid && app.submitterEmail === customUserData.email);
             }
 
             // 2. Filter by Category
@@ -172,8 +222,8 @@
             });
             
             if (view === 'mine') {
-                if (!auth.currentUser) {
-                    window.showToast("App တင်သွင်းရန် Login ဝင်ရန် လိုအပ်ပါသည်။", 'error');
+                if (!customUserData.isLoggedIn) {
+                    window.showToast("App တင်သွင်းမှုများကိုကြည့်ရန် Name/Email ဖြင့် ဝင်ရန် လိုအပ်ပါသည်။", 'error');
                     window.setView('all');
                     return;
                 }
@@ -258,10 +308,9 @@
             }
         };
 
+
         // Updates all UI elements related to the current user/auth status
         window.updateProfileUI = () => {
-            const user = auth.currentUser;
-            
             // UI elements
             const profileAvatarInitials = document.getElementById('profileAvatarInitials');
             const profileDisplayName = document.getElementById('profileDisplayName');
@@ -271,58 +320,55 @@
             const submitterEmailInput = document.getElementById('submitterEmailInput');
             
             const adminPanelStatus = document.getElementById('adminPanelStatus');
-            const adminLoginContainer = document.getElementById('adminLoginContainer');
+            const adminLoginSection = document.getElementById('adminLoginSection');
+            const adminLogoutSection = document.getElementById('adminLogoutSection');
             
-            // Reset Admin Status
-            window.isAdmin = false; 
+            const user = auth.currentUser; // Firebase Anonymous User
 
-            if (user) {
-                // User Logged In 
-                const name = user.displayName || user.email.split('@')[0];
-                const email = user.email || 'No Email';
+            // --- ADMIN UI UPDATE ---
+            if (window.isAdmin) {
+                adminPanelStatus.classList.remove('hidden');
+                adminLoginSection.classList.add('hidden');
+                adminLogoutSection.classList.remove('hidden');
+            } else {
+                adminPanelStatus.classList.add('hidden');
+                adminLoginSection.classList.remove('hidden');
+                adminLogoutSection.classList.add('hidden');
+            }
+            
+            // --- USER UI UPDATE ---
+            if (customUserData.isLoggedIn) {
+                // Custom User Logged In 
                 
-                // Check Admin Status (Email ဖြင့် စစ်ဆေးခြင်း)
-                if (ADMIN_EMAILS.includes(email)) {
-                    window.isAdmin = true;
-                    adminPanelStatus.classList.remove('hidden');
-                    adminLoginContainer.classList.add('hidden');
-                } else {
-                    adminPanelStatus.classList.add('hidden');
-                    adminLoginContainer.classList.add('hidden'); // Google Login ပြီးရင် Admin Login ကို ဖျောက်
-                }
-
                 // Profile Modal Display
-                profileDisplayName.textContent = name;
-                profileDisplayEmail.textContent = email;
-                profileAvatarInitials.textContent = name.charAt(0).toUpperCase();
-                currentUserIdSpan.textContent = user.uid;
+                profileDisplayName.textContent = customUserData.name;
+                profileDisplayEmail.textContent = customUserData.email;
+                profileAvatarInitials.textContent = customUserData.name.charAt(0).toUpperCase();
+                currentUserIdSpan.textContent = user ? user.uid : 'N/A';
 
                 // Submission Modal Input
-                submitterNameInput.value = name;
-                submitterEmailInput.value = email;
+                submitterNameInput.value = customUserData.name;
+                submitterEmailInput.value = customUserData.email;
 
                 // Header Button Display
-                userDisplayBtn.textContent = name.charAt(0).toUpperCase();
+                userDisplayBtn.textContent = customUserData.name.charAt(0).toUpperCase();
                 
                 loginContainer.classList.add('hidden');    
                 logoutContainer.classList.remove('hidden'); 
 
             } else {
                 // User Logged Out (Guest)
-                profileDisplayName.textContent = 'ဧည့်သည် (Guest)';
-                profileDisplayEmail.textContent = 'Google ဖြင့် ဝင်ရောက်ပါ';
+                profileDisplayName.textContent = 'ဧည့်သည်';
+                profileDisplayEmail.textContent = 'Name/Email ဖြင့် ဝင်ရောက်ပါ';
                 profileAvatarInitials.textContent = 'G';
-                currentUserIdSpan.textContent = 'N/A';
+                currentUserIdSpan.textContent = user ? user.uid : 'N/A';
                 
                 userDisplayBtn.textContent = '?';
-                submitterNameInput.value = 'အမည်မသိ';
-                submitterEmailInput.value = 'Email မရှိ';
+                submitterNameInput.value = 'ဧည့်သည်';
+                submitterEmailInput.value = 'guest@appstore.com';
                 
                 loginContainer.classList.remove('hidden'); 
                 logoutContainer.classList.add('hidden'); 
-                adminPanelStatus.classList.add('hidden');
-                adminLoginContainer.classList.add('hidden'); // Guest mode တွင် Admin login လည်း မလိုအပ်
-
             }
         };
 
@@ -341,14 +387,12 @@
             loadingIndicator.classList.add('hidden');
         });
 
-        // Real-time listener for Auth State (User Login/Logout)
+        // Real-time listener for Auth State (Anonymous User ၏ UID ရယူရန်)
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 window.currentUser = user;
-                // Admin စစ်ဆေးခြင်းကို updateProfileUI ထဲတွင် အလိုအလျောက်လုပ်ဆောင်သည်။
             } else {
                 window.currentUser = null;
-                window.isAdmin = false; // Logged out ဖြစ်ပါက Admin status ဖြုတ်သည်။
             }
             window.updateProfileUI(); 
             window.filterApps();
@@ -359,8 +403,8 @@
         // User: Submit New App Logic
         submitAppForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            if (!auth.currentUser || !db) {
-                window.showToast("App တင်သွင်းရန်အတွက် Google ဖြင့် ဝင်ရန် လိုအပ်ပါသည်။", 'error');
+            if (!customUserData.isLoggedIn || !auth.currentUser || !db) {
+                window.showToast("App တင်သွင်းရန်အတွက် Name/Email ဖြင့် ဝင်ရန် လိုအပ်ပါသည်။", 'error');
                 return;
             }
 
@@ -375,8 +419,9 @@
                 return;
             }
             
-            const submitterName = auth.currentUser.displayName || auth.currentUser.email;
-            const submitterId = auth.currentUser.uid;
+            const submitterName = customUserData.name;
+            const submitterEmail = customUserData.email;
+            const submitterId = auth.currentUser.uid; // Anonymous UID ကို သုံးသည်
 
             try {
                 await addDoc(collection(db, APP_COLLECTION_PATH), {
@@ -386,6 +431,7 @@
                     mediaFireLink,
                     iconUrl,
                     submitterName,
+                    submitterEmail, // Custom Email ကို ထည့်သွင်းသိမ်းဆည်း
                     submitterId,
                     timestamp: serverTimestamp() 
                 });
@@ -403,7 +449,8 @@
         editAppForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             if (!currentEditAppId || !window.isAdmin || !db) return;
-
+            // ... (Update Logic is the same) ...
+            
             const name = document.getElementById('editAppName').value.trim();
             const description = document.getElementById('editAppDescription').value.trim();
             const category = document.getElementById('editAppCategory').value;
@@ -438,7 +485,8 @@
         window.confirmAndDelete = async function() {
             const appNameInput = document.getElementById('deleteConfirmationInput').value.trim();
             if (!currentEditAppId || !window.isAdmin || !db) return;
-
+            // ... (Delete Logic is the same) ...
+            
             const appToEdit = window.allApps.find(app => app.id === currentEditAppId);
             
             if (appNameInput === appToEdit.name) {
@@ -463,13 +511,14 @@
         // Modal Toggling (Open)
         document.getElementById('submitAppBtn').addEventListener('click', () => {
             window.updateProfileUI(); 
-            if (!auth.currentUser) {
-                window.showToast("App တင်သွင်းရန်အတွက် Google ဖြင့် ဝင်ရန် လိုအပ်ပါသည်။", 'error');
+            if (!customUserData.isLoggedIn) {
+                window.showToast("App တင်သွင်းရန်အတွက် Name/Email ဖြင့် ဝင်ရန် လိုအပ်ပါသည်။", 'error');
                 return;
             }
             submitAppModal.classList.remove('hidden');
         });
 
+        // ... (Modal Close functions are the same) ...
         // Modal Toggling (Close)
         document.getElementById('closeModalBtn').addEventListener('click', () => { submitAppModal.classList.add('hidden'); });
         document.getElementById('closeProfileModalBtn').addEventListener('click', () => { 
@@ -482,11 +531,14 @@
             editAppModal.classList.add('hidden');
             currentEditAppId = null;
         });
-
+        document.getElementById('closeUserLoginModalBtn').addEventListener('click', () => { userLoginModal.classList.add('hidden'); });
+        
         // Outside click to close (အရင်အတိုင်း)
         submitAppModal.addEventListener('click', (e) => { if (e.target === submitAppModal) submitAppModal.classList.add('hidden'); });
         profileModal.addEventListener('click', (e) => { if (e.target === profileModal) profileModal.classList.add('hidden'); });
         editAppModal.addEventListener('click', (e) => { if (e.target === editAppModal) { editAppModal.classList.add('hidden'); currentEditAppId = null; } });
+        userLoginModal.addEventListener('click', (e) => { if (e.target === userLoginModal) userLoginModal.classList.add('hidden'); });
+
 
         // Open Profile Modal 
         userDisplayBtn.addEventListener('click', () => {
@@ -519,6 +571,7 @@
 
         // Initial setup on window load
         window.onload = () => {
+            window.initAuth(); // Firebase Anonymous Login ကို အရင်လုပ်ထားမည်
             lucide.createIcons(); 
             window.setView('all'); 
             window.setCategoryFilter('All', false); 
@@ -526,7 +579,7 @@
         };
         
     </script>
-
+    
     <div id="app" class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
 
         <header class="sticky top-0 z-30 bg-f0f2f5 pt-2 pb-4">
@@ -640,15 +693,15 @@
                 </div>
                 <h3 id="profileDisplayName" class="text-xl font-bold text-gray-800"></h3>
                 <p id="profileDisplayEmail" class="text-gray-500 text-sm"></p>
-                <p class="text-xs text-gray-400 mt-2">User ID: <span id="currentUserIdSpan">...</span></p>
+                <p class="text-xs text-gray-400 mt-2">Firebase ID: <span id="currentUserIdSpan">...</span></p>
             </div>
 
             <div id="loginContainer" class="space-y-4">
-                <h3 class="text-md font-bold text-gray-700 mb-3 border-t pt-4">ဝင်ရောက်ခြင်း / မှတ်ပုံတင်ခြင်း</h3>
-                <button onclick="window.signInWithGoogle()"
-                            class="w-full py-3 bg-google-blue text-white font-bold rounded-lg hover:bg-google-blue-dark active:bg-blue-700 transition duration-150 shadow-lg flex items-center justify-center space-x-3">
-                    <img src="https://upload.wikimedia.org/wikipedia/commons/4/4a/Logo-google.png" alt="Google Logo" class="w-5 h-5 bg-white rounded-full">
-                    <span>Google ဖြင့် ဝင်ရောက်ရန်</span>
+                <h3 class="text-md font-bold text-gray-700 mb-3 border-t pt-4">ဝင်ရောက်ခြင်း</h3>
+                <button onclick="document.getElementById('userLoginModal').classList.remove('hidden'); profileModal.classList.add('hidden');"
+                            class="w-full py-3 bg-active-blue text-white font-bold rounded-lg hover:bg-blue-700 active:bg-blue-800 transition duration-150 shadow-lg flex items-center justify-center space-x-3">
+                    <i data-lucide="log-in" class="w-5 h-5"></i>
+                    <span>Name/Email ဖြင့် ဝင်ရောက်ရန်</span>
                 </button>
             </div>
 
@@ -660,28 +713,82 @@
                     ကျွန်ုပ်တင်ထားသော App များကိုကြည့်ရန်
                 </button>
 
-                <button onclick="window.signOutUser()"
+                <button onclick="window.userLogout()"
                             class="w-full py-3 bg-gray-300 text-gray-800 font-bold rounded-lg hover:bg-gray-400 active:bg-gray-500 transition duration-150 shadow-lg">
                     <i data-lucide="log-out" class="w-5 h-5 inline mr-2"></i>
                     ထွက်ရန် (Sign Out)
                 </button>
             </div>
             
-            <div id="profileEditSection" class="hidden"></div>
-            
             <div class="mt-8 pt-4 border-t border-gray-200" id="adminPanel">
                 <h3 class="text-lg font-bold text-red-600 mb-3 flex items-center">
-                    <i data-lucide="shield-check" class="w-5 h-5 mr-2"></i>
+                    <i data-lucide="shield" class="w-5 h-5 mr-2"></i>
                     Admin Control
                 </h3>
 
                 <div id="adminPanelStatus" class="p-3 bg-red-100 rounded-lg hidden">
                     <p class="text-sm font-semibold text-red-700">အုပ်ချုပ်သူအဖြစ် ဝင်ရောက်ထားပါသည်</p>
                     <p class="text-xs text-red-500">App အားလုံးကို ဖြုတ်/ပြင်ဆင်နိုင်ပါသည်။</p>
+                    <button onclick="window.adminLogout()" class="mt-2 text-xs text-red-500 font-semibold hover:text-red-700">
+                        Admin ထွက်ရန်
+                    </button>
                 </div>
+                
+                <div id="adminLoginSection" class="space-y-3">
+                    <p class="text-sm text-gray-500">Admin ဝင်ခွင့်ရှိသူများသာ ဝင်ရောက်ပါ။</p>
+                    <input type="text" id="adminNameInput" placeholder="Admin Name"
+                           class="w-full p-2 border border-gray-300 rounded-lg text-sm">
+                    <input type="password" id="adminPassInput" placeholder="Password"
+                           class="w-full p-2 border border-gray-300 rounded-lg text-sm">
+                    <button onclick="window.adminLogin()"
+                            class="w-full py-2 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition duration-150">
+                        Admin ဝင်ရန်
+                    </button>
+                </div>
+                
+                <div id="adminLogoutSection" class="hidden">
+                    </div>
+                
             </div>
             </div>
     </div>
+    
+    <div id="userLoginModal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 max-h-[90vh] overflow-y-auto modal-content">
+            <div class="flex justify-between items-center border-b pb-3 mb-6">
+                <h2 class="text-2xl font-bold text-gray-800 flex items-center">
+                    <i data-lucide="user-plus" class="w-6 h-6 mr-2 text-active-blue"></i>
+                    App တင်သွင်းရန် ဝင်ရောက်ပါ
+                </h2>
+                <button id="closeUserLoginModalBtn" class="text-gray-400 hover:text-gray-600 transition" title="ပိတ်ရန်">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+
+            <form id="userLoginForm" onsubmit="event.preventDefault(); window.userLogin()" class="space-y-4">
+                <p class="text-sm text-gray-600">App တင်သွင်းသူအမည်နှင့် Email ကို ထည့်သွင်းပါ။</p>
+                <div>
+                    <label for="loginNameInput" class="block text-sm font-medium text-gray-700 mb-1">သင့်အမည် <span class="text-red-500">*</span></label>
+                    <input type="text" id="loginNameInput" required placeholder="ဥပမာ: Wai Phyo"
+                                 class="w-full p-3 border border-gray-300 rounded-lg focus:ring-active-blue focus:border-active-blue shadow-sm">
+                </div>
+
+                <div>
+                    <label for="loginEmailInput" class="block text-sm font-medium text-gray-700 mb-1">သင့် Email လိပ်စာ <span class="text-red-500">*</span></label>
+                    <input type="email" id="loginEmailInput" required placeholder="ဥပမာ: example@gmail.com"
+                                 class="w-full p-3 border border-gray-300 rounded-lg focus:ring-active-blue focus:border-active-blue shadow-sm">
+                    <p class="text-xs text-gray-500 mt-1">တင်သွင်းသူအဖြစ်မှတ်သားရန်အတွက်သာ အသုံးပြုပါသည်။</p>
+                </div>
+                
+                <button type="submit" 
+                            class="w-full py-3 bg-active-blue text-white font-bold rounded-lg hover:bg-blue-700 active:bg-blue-800 transition duration-150 shadow-lg mt-6">
+                    <i data-lucide="check-circle" class="w-5 h-5 inline mr-2"></i>
+                    ဝင်ရောက် အသုံးပြုမည်
+                </button>
+            </form>
+        </div>
+    </div>
+
     
     <div id="submitAppModal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto modal-content">
@@ -698,9 +805,9 @@
             <form id="appSubmissionForm" class="space-y-4">
                 
                 <div class="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                    <p class="text-xs font-semibold text-yellow-800 mb-2">တင်သွင်းသူ အချက်အလက် (Google Profile မှ အလိုအလျောက် ရယူပါမည်)</p>
-                    <input type="text" id="submitterNameInput" readonly class="w-full p-2 text-sm bg-white border border-gray-200 rounded-md mb-1 text-gray-600" title="သင့် Google Profile နာမည်။">
-                    <input type="email" id="submitterEmailInput" readonly class="w-full p-2 text-sm bg-white border border-gray-200 rounded-md text-gray-600" title="သင့် Google Email။">
+                    <p class="text-xs font-semibold text-yellow-800 mb-2">တင်သွင်းသူ အချက်အလက်</p>
+                    <input type="text" id="submitterNameInput" readonly class="w-full p-2 text-sm bg-white border border-gray-200 rounded-md mb-1 text-gray-600" title="သင့်အမည်။">
+                    <input type="email" id="submitterEmailInput" readonly class="w-full p-2 text-sm bg-white border border-gray-200 rounded-md text-gray-600" title="သင့် Email။">
                 </div>
 
                 <div>
