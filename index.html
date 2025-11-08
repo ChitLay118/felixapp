@@ -1,3 +1,24 @@
+<!DOCTYPE html>
+<html lang="my">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wai App Store</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Custom Styles for Play Store feel */
+        .shadow-play { box-shadow: 0 1px 3px 0 rgba(60,64,67,.3), 0 4px 8px 3px rgba(60,64,67,.15); }
+        .bg-f0f2f5 { background-color: #f0f2f5; }
+        .text-play-green { color: #008060; }
+        .bg-play-green { background-color: #008060; }
+        .hover\:bg-active-blue-dark:hover { background-color: #005A9C; }
+        .text-active-blue { color: #1a73e8; }
+        .bg-google-blue { background-color: #4285F4; }
+        .hover\:bg-google-blue-dark:hover { background-color: #357ae8; }
+        .nav-category-btn.active { color: #1a73e8; font-weight: bold; border-top: 2px solid #1a73e8; margin-top: -2px; }
+    </style>
+</head>
 <body class="bg-f0f2f5 pb-20">
 
     <script type="module">
@@ -9,11 +30,11 @@
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-analytics.js";
         import { 
             getFirestore, doc, updateDoc, deleteDoc, 
-            collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp 
+            collection, query, orderBy, onSnapshot, addDoc, serverTimestamp 
         } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
         import { 
             getAuth, onAuthStateChanged, 
-            GoogleAuthProvider, signInWithPopup, signOut // <-- Google Login အတွက် ထည့်သွင်း
+            GoogleAuthProvider, signInWithPopup, signOut 
         } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-auth.js";
 
 
@@ -37,11 +58,13 @@
         const auth = getAuth(app);
         
         // Google Provider setup
-        const googleProvider = new GoogleAuthProvider(); // <-- Google Provider ဖန်တီး
-
-        // Global variables 
+        const googleProvider = new GoogleAuthProvider(); 
+        
+        // Global variables and constants
         let currentEditAppId = null; 
         const APP_COLLECTION_PATH = 'apps';
+        // Admin Email List - Admin ဝင်ခွင့်ပေးမည့် Gmail များကို ဤနေရာတွင် ထည့်သွင်းပါ။
+        const ADMIN_EMAILS = ["admin@waiappstore.com", "your.admin.email@gmail.com"]; 
         
         // Exporting to window for easy access
         window.db = db;
@@ -60,33 +83,34 @@
         const loadingIndicator = document.getElementById('loadingIndicator');
         const viewTitle = document.getElementById('viewTitle');
         const noResults = document.getElementById('noResults');
-        const loginContainer = document.getElementById('loginContainer'); // <-- အသစ်
-        const logoutContainer = document.getElementById('logoutContainer'); // <-- အသစ်
-        
+        const loginContainer = document.getElementById('loginContainer'); 
+        const logoutContainer = document.getElementById('logoutContainer'); 
+        const profileEditSection = document.getElementById('profileEditSection'); 
+
+
         // --------------------------------------------------------------------------------
         // 2. AUTHENTICATION FUNCTIONS (Google Sign-in/out)
         // --------------------------------------------------------------------------------
 
-        // Google Sign In
+        // Google Sign In (Called by button click)
         window.signInWithGoogle = async () => {
             try {
                 // Pop-up ဖြင့် ဝင်ရောက်ခြင်း
                 await signInWithPopup(auth, googleProvider); 
                 window.showToast("Google ဖြင့် ဝင်ရောက်ခြင်း အောင်မြင်ပါသည်။", 'success');
-                profileModal.classList.add('hidden'); // Modal ပိတ်ခြင်း
+                profileModal.classList.add('hidden'); 
             } catch (error) {
                 console.error("Google Sign-In Error: ", error);
                 window.showToast("Google ဖြင့် ဝင်ရောက်ရာတွင် အမှားဖြစ်ခဲ့သည်။", 'error');
             }
         };
 
-        // Sign Out
+        // Sign Out (Called by button click)
         window.signOutUser = async () => {
             try {
                 await signOut(auth);
                 window.showToast("အောင်မြင်စွာ ထွက်ပြီးပါပြီ။", 'info');
                 profileModal.classList.add('hidden');
-                window.isAdmin = false; // Log out လုပ်ရင် Admin status ကိုလည်း ဖြုတ်
             } catch (error) {
                 console.error("Sign-Out Error: ", error);
                 window.showToast("ထွက်ရာတွင် အမှားဖြစ်ခဲ့သည်။", 'error');
@@ -97,14 +121,98 @@
         // --------------------------------------------------------------------------------
         // 3. CORE APPLICATION LOGIC (UI/Data)
         // --------------------------------------------------------------------------------
+
+        // Placeholder for filtering logic
+        window.filterApps = () => {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
+            const currentCategory = window.currentCategoryFilter || 'All';
+            const currentView = window.currentView || 'all';
+
+            let filtered = window.allApps;
+            
+            // 1. Filter by View (All or Mine)
+            if (currentView === 'mine' && auth.currentUser) {
+                filtered = filtered.filter(app => app.submitterId === auth.currentUser.uid);
+            }
+
+            // 2. Filter by Category
+            if (currentCategory !== 'All') {
+                filtered = filtered.filter(app => app.category === currentCategory);
+            }
+
+            // 3. Filter by Search Term
+            if (searchTerm) {
+                filtered = filtered.filter(app => 
+                    app.name.toLowerCase().includes(searchTerm) || 
+                    app.description.toLowerCase().includes(searchTerm)
+                );
+            }
+
+            window.renderApps(filtered);
+            
+            if (filtered.length === 0 && (searchTerm || currentCategory !== 'All' || currentView === 'mine')) {
+                noResults.classList.remove('hidden');
+                document.getElementById('noResultsText').textContent = searchTerm 
+                    ? `"${searchTerm}" အတွက် ရလဒ် မတွေ့ရှိပါ။` 
+                    : "ရှာဖွေမှုရလဒ် မတွေ့ရှိပါ။";
+            } else {
+                noResults.classList.add('hidden');
+            }
+        };
         
-        // ... (window.filterApps, window.setView, window.setCategoryFilter functions များ မပြောင်းလဲပါ) ...
-        
-        // Placeholder for rendering apps (creates the HTML cards)
+        // Sets the view (All, Mine) and triggers filter
+        window.setView = (view) => {
+            window.currentView = view;
+            
+            document.getElementById('closeProfileModalBtn').addEventListener('click', () => {
+                profileModal.classList.add('hidden');
+                if (window.currentView === 'mine') {
+                    window.setView('all'); 
+                }
+            });
+            
+            if (view === 'mine') {
+                if (!auth.currentUser) {
+                    window.showToast("App တင်သွင်းရန် Login ဝင်ရန် လိုအပ်ပါသည်။", 'error');
+                    window.setView('all');
+                    return;
+                }
+                viewTitle.textContent = "ကျွန်ုပ်တင်ထားသော App များ";
+                document.getElementById('backToAllContainer').innerHTML = 
+                    `<button onclick="window.setView('all')" class="text-sm font-medium text-active-blue hover:text-blue-700 transition">
+                        <i data-lucide="arrow-left" class="w-4 h-4 inline mr-1"></i> App အားလုံးသို့ ပြန်သွားရန်
+                    </button>`;
+            } else {
+                viewTitle.textContent = "အသစ်ဆုံး App များအားလုံး";
+                document.getElementById('backToAllContainer').innerHTML = '';
+            }
+            lucide.createIcons(); 
+            window.filterApps();
+        };
+
+        // Sets category filter and triggers app filter
+        window.setCategoryFilter = (category, shouldFilter = true) => {
+            window.currentCategoryFilter = category;
+            
+            document.querySelectorAll('.nav-category-btn').forEach(btn => {
+                btn.classList.remove('active', 'text-active-blue');
+                btn.classList.add('text-gray-500');
+            });
+            const activeBtn = document.getElementById(`nav-${category}`);
+            if (activeBtn) {
+                activeBtn.classList.add('active', 'text-active-blue');
+                activeBtn.classList.remove('text-gray-500');
+            }
+
+            if (shouldFilter) {
+                window.filterApps();
+            }
+        };
+
+        // Renders the app cards to the DOM
         window.renderApps = (apps) => {
-            // ... (window.renderApps function အရင်အတိုင်း) ...
             appListContainer.innerHTML = apps.map(app => `
-                <div class="app-card bg-white p-4 rounded-xl shadow-play hover:shadow-lg transition cursor-pointer" onclick="window.handleAppClick('${app.id}')">
+                <div class="app-card bg-white p-4 rounded-xl shadow-play hover:shadow-lg transition cursor-pointer" onclick="window.handleAppClick('${app.id}', '${app.mediaFireLink}')">
                     <img src="${app.iconUrl}" alt="${app.name} icon" class="w-16 h-16 rounded-xl mx-auto mb-3 object-cover">
                     <p class="text-sm font-bold text-gray-800 truncate text-center">${app.name}</p>
                     <p class="text-xs text-gray-500 text-center">${app.category}</p>
@@ -122,37 +230,82 @@
             loadingIndicator.classList.add('hidden');
         };
 
-        // ... (window.openEditModal, window.handleAppClick functions များ မပြောင်းလဲပါ) ...
+        // Opens the edit modal for Admin
+        window.openEditModal = (appId) => {
+            if (!window.isAdmin) return;
+            const appToEdit = window.allApps.find(app => app.id === appId);
+            if (!appToEdit) return;
 
-        // Update Profile UI (Auth Status ပြောင်းလဲတိုင်း အလုပ်လုပ်)
+            currentEditAppId = appId;
+
+            document.getElementById('editAppName').value = appToEdit.name || '';
+            document.getElementById('editAppDescription').value = appToEdit.description || '';
+            document.getElementById('editAppCategory').value = appToEdit.category || 'Games';
+            document.getElementById('editMediaFireLink').value = appToEdit.mediaFireLink || '';
+            document.getElementById('editIconUrl').value = appToEdit.iconUrl || '';
+            
+            document.getElementById('deleteAppNameToConfirm').textContent = appToEdit.name;
+
+            document.getElementById('editAppModal').classList.remove('hidden');
+        };
+
+        // Handles app card click (Download)
+        window.handleAppClick = (appId, link) => {
+            if (link) {
+                window.open(link, '_blank');
+            } else {
+                window.showToast("ဒေါင်းလုတ်လင့်ခ် မတွေ့ပါ။", 'error');
+            }
+        };
+
+        // Updates all UI elements related to the current user/auth status
         window.updateProfileUI = () => {
             const user = auth.currentUser;
+            
+            // UI elements
             const profileAvatarInitials = document.getElementById('profileAvatarInitials');
             const profileDisplayName = document.getElementById('profileDisplayName');
             const profileDisplayEmail = document.getElementById('profileDisplayEmail');
             const currentUserIdSpan = document.getElementById('currentUserIdSpan');
             const submitterNameInput = document.getElementById('submitterNameInput');
             const submitterEmailInput = document.getElementById('submitterEmailInput');
-            const profileEditSection = document.getElementById('profileEditSection'); // <-- အသစ်
+            
+            const adminPanelStatus = document.getElementById('adminPanelStatus');
+            const adminLoginContainer = document.getElementById('adminLoginContainer');
+            
+            // Reset Admin Status
+            window.isAdmin = false; 
 
             if (user) {
                 // User Logged In 
-                const name = user.displayName || user.email.split('@')[0]; // Google မှာ နာမည်မရှိရင် email ကနေ ယူ
+                const name = user.displayName || user.email.split('@')[0];
                 const email = user.email || 'No Email';
                 
+                // Check Admin Status (Email ဖြင့် စစ်ဆေးခြင်း)
+                if (ADMIN_EMAILS.includes(email)) {
+                    window.isAdmin = true;
+                    adminPanelStatus.classList.remove('hidden');
+                    adminLoginContainer.classList.add('hidden');
+                } else {
+                    adminPanelStatus.classList.add('hidden');
+                    adminLoginContainer.classList.add('hidden'); // Google Login ပြီးရင် Admin Login ကို ဖျောက်
+                }
+
+                // Profile Modal Display
                 profileDisplayName.textContent = name;
                 profileDisplayEmail.textContent = email;
                 profileAvatarInitials.textContent = name.charAt(0).toUpperCase();
                 currentUserIdSpan.textContent = user.uid;
 
+                // Submission Modal Input
                 submitterNameInput.value = name;
                 submitterEmailInput.value = email;
 
+                // Header Button Display
                 userDisplayBtn.textContent = name.charAt(0).toUpperCase();
                 
-                loginContainer.classList.add('hidden');    // Login ခလုတ် ဖျောက်
-                logoutContainer.classList.remove('hidden'); // Logout ခလုတ် ပြ
-                profileEditSection.classList.add('hidden'); // Profile ပြင်ဆင်ရန် အပိုင်း ဖျောက် (Google ဖြင့်မရ)
+                loginContainer.classList.add('hidden');    
+                logoutContainer.classList.remove('hidden'); 
 
             } else {
                 // User Logged Out (Guest)
@@ -165,29 +318,17 @@
                 submitterNameInput.value = 'အမည်မသိ';
                 submitterEmailInput.value = 'Email မရှိ';
                 
-                loginContainer.classList.remove('hidden'); // Login ခလုတ် ပြ
-                logoutContainer.classList.add('hidden');  // Logout ခလုတ် ဖျောက်
-                profileEditSection.classList.add('hidden'); // Profile ပြင်ဆင်ရန် အပိုင်း ဖျောက်
-            }
-
-            // Admin Panel Visibility (Admin Logic အရင်အတိုင်း)
-            const adminPanelStatus = document.getElementById('adminPanelStatus');
-            const adminLoginContainer = document.getElementById('adminLoginContainer');
-            
-            if (window.isAdmin) {
-                adminPanelStatus.classList.remove('hidden');
-                adminLoginContainer.classList.add('hidden');
-            } else {
+                loginContainer.classList.remove('hidden'); 
+                logoutContainer.classList.add('hidden'); 
                 adminPanelStatus.classList.add('hidden');
-                adminLoginContainer.classList.remove('hidden');
+                adminLoginContainer.classList.add('hidden'); // Guest mode တွင် Admin login လည်း မလိုအပ်
+
             }
         };
 
-        // ... (window.attemptAdminLogin, window.logoutAdmin, window.confirmAndDelete functions များ မပြောင်းလဲပါ) ...
-
         // --- 4. FIREBASE LISTENERS ---
-        
-        // Real-time listener for the apps collection (အရင်အတိုင်း)
+
+        // Real-time listener for the apps collection
         const appQuery = query(collection(db, APP_COLLECTION_PATH), orderBy("timestamp", "desc"));
 
         onSnapshot(appQuery, (snapshot) => {
@@ -195,56 +336,188 @@
             window.filterApps(); 
             loadingIndicator.classList.add('hidden');
         }, (error) => {
-            // ... (Error handling အရင်အတိုင်း) ...
+            console.error("Error fetching documents: ", error);
+            window.showToast("App အချက်အလက်များကို ဆွဲယူရာတွင် အမှားဖြစ်ခဲ့သည်။", 'error');
+            loadingIndicator.classList.add('hidden');
         });
 
         // Real-time listener for Auth State (User Login/Logout)
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 window.currentUser = user;
-                // Google ဖြင့် ဝင်ရောက်လျှင် DisplayName သည် Google မှ အလိုအလျောက်ရရှိ
-                window.showToast(`${user.displayName || user.email} အဖြစ် ဝင်ရောက်ထားသည်။`, 'info'); 
+                // Admin စစ်ဆေးခြင်းကို updateProfileUI ထဲတွင် အလိုအလျောက်လုပ်ဆောင်သည်။
             } else {
                 window.currentUser = null;
+                window.isAdmin = false; // Logged out ဖြစ်ပါက Admin status ဖြုတ်သည်။
             }
-            window.updateProfileUI(); // UI ကို အမြဲ Update လုပ်
+            window.updateProfileUI(); 
             window.filterApps();
         });
 
         // --- 5. FORM SUBMISSION LOGIC (Create/Update/Delete) ---
 
-        // User: Submit New App Logic (အရင်အတိုင်း)
+        // User: Submit New App Logic
         submitAppForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             if (!auth.currentUser || !db) {
                 window.showToast("App တင်သွင်းရန်အတွက် Google ဖြင့် ဝင်ရန် လိုအပ်ပါသည်။", 'error');
                 return;
             }
-            // ... (rest of the submission logic) ...
+
+            const name = document.getElementById('appName').value.trim();
+            const description = document.getElementById('appDescription').value.trim();
+            const category = document.getElementById('appCategory').value;
+            const mediaFireLink = document.getElementById('mediaFireLink').value.trim();
+            const iconUrl = document.getElementById('iconUrl').value.trim();
+            
+            if (!name || !description || !mediaFireLink || !iconUrl) {
+                window.showToast("ကျေးဇူးပြု၍ လိုအပ်သောအချက်အလက်အားလုံးကို ဖြည့်သွင်းပါ။", 'error');
+                return;
+            }
+            
+            const submitterName = auth.currentUser.displayName || auth.currentUser.email;
+            const submitterId = auth.currentUser.uid;
+
             try {
-                // ... (addDoc logic) ...
+                await addDoc(collection(db, APP_COLLECTION_PATH), {
+                    name,
+                    description,
+                    category,
+                    mediaFireLink,
+                    iconUrl,
+                    submitterName,
+                    submitterId,
+                    timestamp: serverTimestamp() 
+                });
+
+                window.showToast(`"${name}" App တင်သွင်းခြင်း အောင်မြင်ပါသည်။`, 'success');
+                submitAppForm.reset();
+                submitAppModal.classList.add('hidden');
             } catch (error) {
-                // ... (error handling) ...
+                console.error("Error submitting app: ", error);
+                window.showToast("App တင်သွင်းရာတွင် အမှားဖြစ်ခဲ့သည်။", 'error');
             }
         });
 
-        // Admin: Update App Logic (အရင်အတိုင်း)
+        // Admin: Update App Logic
         editAppForm.addEventListener('submit', async (e) => {
-            // ... (Update Logic အရင်အတိုင်း) ...
+            e.preventDefault();
+            if (!currentEditAppId || !window.isAdmin || !db) return;
+
+            const name = document.getElementById('editAppName').value.trim();
+            const description = document.getElementById('editAppDescription').value.trim();
+            const category = document.getElementById('editAppCategory').value;
+            const mediaFireLink = document.getElementById('editMediaFireLink').value.trim();
+            const iconUrl = document.getElementById('editIconUrl').value.trim();
+            
+            if (!name || !description || !mediaFireLink || !iconUrl) {
+                window.showToast("ကျေးဇူးပြု၍ လိုအပ်သောအချက်အလက်အားလုံးကို ဖြည့်သွင်းပါ။", 'error');
+                return;
+            }
+            
+            const appRef = doc(db, APP_COLLECTION_PATH, currentEditAppId);
+            try {
+                await updateDoc(appRef, {
+                    name,
+                    description,
+                    category,
+                    mediaFireLink,
+                    iconUrl,
+                });
+
+                window.showToast(`"${name}" App အချက်အလက်များကို ပြင်ဆင်ပြီးပါပြီ။`, 'success');
+                document.getElementById('editAppModal').classList.add('hidden');
+                currentEditAppId = null;
+            } catch (error) {
+                console.error("Error updating app: ", error);
+                window.showToast("App ပြင်ဆင်ရာတွင် အမှားဖြစ်ခဲ့သည်။", 'error');
+            }
         });
         
-        // ... (window.confirmAndDelete function အရင်အတိုင်း) ...
+        // Admin: Delete App Confirmation Logic
+        window.confirmAndDelete = async function() {
+            const appNameInput = document.getElementById('deleteConfirmationInput').value.trim();
+            if (!currentEditAppId || !window.isAdmin || !db) return;
+
+            const appToEdit = window.allApps.find(app => app.id === currentEditAppId);
+            
+            if (appNameInput === appToEdit.name) {
+                const appRef = doc(db, APP_COLLECTION_PATH, currentEditAppId);
+                try {
+                    await deleteDoc(appRef);
+                    window.showToast(`"${appToEdit.name}" App ဖျက်ခြင်း အောင်မြင်ပါသည်။`, 'success');
+                    document.getElementById('editAppModal').classList.add('hidden');
+                    currentEditAppId = null;
+                    document.getElementById('deleteConfirmationInput').value = '';
+                } catch (error) {
+                    console.error("Error deleting app: ", error);
+                    window.showToast("App ဖျက်ရာတွင် အမှားဖြစ်ခဲ့သည်။", 'error');
+                }
+            } else {
+                window.showToast("App နာမည် မှန်ကန်စွာ ရိုက်ထည့်ပေးပါ။", 'error');
+            }
+        }
         
         // --- 6. MODAL AND UTILITY FUNCTIONS ---
 
-        // ... (Modal Toggling functions အရင်အတိုင်း) ...
+        // Modal Toggling (Open)
+        document.getElementById('submitAppBtn').addEventListener('click', () => {
+            window.updateProfileUI(); 
+            if (!auth.currentUser) {
+                window.showToast("App တင်သွင်းရန်အတွက် Google ဖြင့် ဝင်ရန် လိုအပ်ပါသည်။", 'error');
+                return;
+            }
+            submitAppModal.classList.remove('hidden');
+        });
 
-        // Toast Notification (အရင်အတိုင်း)
+        // Modal Toggling (Close)
+        document.getElementById('closeModalBtn').addEventListener('click', () => { submitAppModal.classList.add('hidden'); });
+        document.getElementById('closeProfileModalBtn').addEventListener('click', () => { 
+            profileModal.classList.add('hidden'); 
+            if (window.currentView === 'mine') {
+                window.setView('all'); 
+            }
+        });
+        document.getElementById('closeEditModalBtn').addEventListener('click', () => {
+            editAppModal.classList.add('hidden');
+            currentEditAppId = null;
+        });
+
+        // Outside click to close (အရင်အတိုင်း)
+        submitAppModal.addEventListener('click', (e) => { if (e.target === submitAppModal) submitAppModal.classList.add('hidden'); });
+        profileModal.addEventListener('click', (e) => { if (e.target === profileModal) profileModal.classList.add('hidden'); });
+        editAppModal.addEventListener('click', (e) => { if (e.target === editAppModal) { editAppModal.classList.add('hidden'); currentEditAppId = null; } });
+
+        // Open Profile Modal 
+        userDisplayBtn.addEventListener('click', () => {
+            window.updateProfileUI(); 
+            profileModal.classList.remove('hidden');
+        });
+
+        // Toast Notification 
         window.showToast = function(message, type = 'info') {
-            // ... (Toast Logic အရင်အတိုင်း) ...
+            const toast = document.getElementById('toastNotification');
+            toast.textContent = message;
+            toast.className = 'fixed bottom-4 right-4 p-4 rounded-lg shadow-xl text-white transition-opacity duration-300 z-50';
+
+            if (type === 'success') {
+                toast.classList.add('bg-green-600');
+            } else if (type === 'error') {
+                toast.classList.add('bg-red-600');
+            } else {
+                toast.classList.add('bg-blue-600');
+            }
+
+            toast.classList.remove('opacity-0', 'hidden');
+            toast.classList.add('opacity-100');
+
+            setTimeout(() => {
+                toast.classList.remove('opacity-100');
+                toast.classList.add('opacity-0');
+            }, 3000);
         }
 
-        // Initial setup on window load (အရင်အတိုင်း)
+        // Initial setup on window load
         window.onload = () => {
             lucide.createIcons(); 
             window.setView('all'); 
@@ -253,7 +526,102 @@
         };
         
     </script>
-    
+
+    <div id="app" class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+
+        <header class="sticky top-0 z-30 bg-f0f2f5 pt-2 pb-4">
+            <div class="flex items-center space-x-3 bg-white p-2 rounded-full shadow-play w-full max-w-7xl mx-auto border-t-2 border-play-green">
+                
+                <button onclick="window.setView('all')" class="flex items-center text-play-green hover:text-active-blue transition duration-150" title="App အားလုံး View ကို ပြန်သွားရန်">
+                    <i data-lucide="play-circle" class="w-6 h-6 ml-2 fill-play-green/10"></i>
+                </button>
+                
+
+                <input type="text" id="searchInput" placeholder="App များကို ရှာဖွေပါ..."
+                         class="flex-grow p-1 text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none"
+                         oninput="filterApps()">
+
+                <button id="submitAppBtn" 
+                            class="flex items-center justify-center p-2 rounded-full bg-play-green text-white hover:bg-active-blue-dark active:bg-blue-700 transition duration-150 shadow-md"
+                            title="App အသစ် တင်သွင်းရန်">
+                    <i data-lucide="upload-cloud" class="w-5 h-5"></i>
+                </button>
+                
+                <button id="userDisplayBtn" 
+                            class="flex items-center justify-center w-9 h-9 rounded-full bg-play-green text-white font-bold text-xs shadow-md ring-2 ring-play-green/50 hover:ring-active-blue transition duration-150"
+                            title="Profile ကို ဖွင့်ရန်">
+                    </button>
+            </div>
+        </header>
+
+<main class="mt-4">
+            <div class="flex items-center justify-between mb-6 border-b-2 border-active-blue pb-2">
+                <h2 id="viewTitle" class="text-xl font-bold text-gray-800">
+                    အသစ်ဆုံး App များအားလုံး
+                </h2>
+                <div id="backToAllContainer"></div> 
+            </div>
+            
+            <div id="loadingIndicator" class="text-center p-10 bg-white rounded-xl shadow-play">
+                <div class="flex items-center justify-center space-x-2">
+                    <div class="w-6 h-6 border-4 border-blue-300 border-t-blue-600 rounded-full animate-spin"></div>
+                    <p class="text-blue-600 font-medium">အက်ပ်များကို ဆွဲယူနေပါသည်...</p>
+                </div>
+            </div>
+
+            <div id="appListContainer" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
+                </div>
+
+            <div id="noResults" class="hidden text-center p-10 bg-white rounded-xl shadow-play mt-6">
+                <p class="text-xl text-gray-500">
+                    <i data-lucide="search-x" class="w-8 h-8 mx-auto mb-3 text-gray-400"></i>
+                    <span id="noResultsText">ရှာဖွေမှုရလဒ် မတွေ့ရှိပါ။</span>
+                </p>
+                <p class="text-gray-500 text-sm mt-2">App အသစ်တစ်ခု တင်သွင်းရန် ကြိုးစားနိုင်ပါသည်။</p>
+            </div>
+        </main>
+        
+    </div>
+
+    <footer id="bottomNav" class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-2xl z-40">
+        <div class="max-w-7xl mx-auto flex justify-around h-16">
+            
+            <button id="nav-All" class="nav-category-btn flex flex-col items-center justify-center flex-grow text-gray-500 transition duration-200" onclick="setCategoryFilter('All')">
+                <i data-lucide="layout-grid" class="w-6 h-6 mb-0.5"></i>
+                <span class="text-xs">အားလုံး</span>
+            </button>
+            
+            <button id="nav-Games" class="nav-category-btn flex flex-col items-center justify-center flex-grow text-gray-500 transition duration-200" onclick="setCategoryFilter('Games')">
+                <i data-lucide="gamepad" class="w-6 h-6 mb-0.5"></i>
+                <span class="text-xs">ဂိမ်း</span>
+            </button>
+
+            <button id="nav-Utility" class="nav-category-btn flex flex-col items-center justify-center flex-grow text-gray-500 transition duration-200" onclick="setCategoryFilter('Utility')">
+                <i data-lucide="wrench" class="w-6 h-6 mb-0.5"></i>
+                <span class="text-xs">အသုံးဝင်မှု</span>
+            </button>
+
+            <button id="nav-Social" class="nav-category-btn flex flex-col items-center justify-center flex-grow text-gray-500 transition duration-200" onclick="setCategoryFilter('Social')">
+                <i data-lucide="message-square" class="w-6 h-6 mb-0.5"></i>
+                <span class="text-xs">လူမှုရေး</span>
+            </button>
+            
+            <button id="nav-Entertainment" class="nav-category-btn flex flex-col items-center justify-center flex-grow text-gray-500 transition duration-200" onclick="setCategoryFilter('Entertainment')">
+                <i data-lucide="smile" class="w-6 h-6 mb-0.5"></i>
+                <span class="text-xs">ဖျော်ဖြေရေး</span>
+            </button>
+            
+            <button id="nav-Profile" 
+                        class="flex flex-col items-center justify-center flex-grow text-gray-500 transition duration-200 hover:text-active-blue" 
+                        onclick="document.getElementById('profileModal').classList.remove('hidden'); window.updateProfileUI();"> 
+                <i data-lucide="user" class="w-6 h-6 mb-0.5"></i>
+                <span class="text-xs">Profile</span>
+            </button>
+            
+        </div>
+    </footer>
+
+
     <div id="profileModal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto modal-content">
             <div class="flex justify-between items-center border-b pb-3 mb-6">
@@ -278,34 +646,185 @@
             <div id="loginContainer" class="space-y-4">
                 <h3 class="text-md font-bold text-gray-700 mb-3 border-t pt-4">ဝင်ရောက်ခြင်း / မှတ်ပုံတင်ခြင်း</h3>
                 <button onclick="window.signInWithGoogle()"
-                            class="w-full py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 active:bg-red-800 transition duration-150 shadow-lg flex items-center justify-center space-x-2">
+                            class="w-full py-3 bg-google-blue text-white font-bold rounded-lg hover:bg-google-blue-dark active:bg-blue-700 transition duration-150 shadow-lg flex items-center justify-center space-x-3">
                     <img src="https://upload.wikimedia.org/wikipedia/commons/4/4a/Logo-google.png" alt="Google Logo" class="w-5 h-5 bg-white rounded-full">
                     <span>Google ဖြင့် ဝင်ရောက်ရန်</span>
                 </button>
             </div>
 
             <div id="logoutContainer" class="hidden space-y-4">
+                
                 <button onclick="document.getElementById('profileModal').classList.add('hidden'); window.setView('mine');"
-                            class="w-full mb-6 py-3 border border-active-blue text-active-blue font-bold rounded-lg hover:bg-active-blue hover:text-white active:bg-blue-700 transition duration-150">
+                            class="w-full mb-4 py-3 border border-active-blue text-active-blue font-bold rounded-lg hover:bg-active-blue hover:text-white active:bg-blue-700 transition duration-150">
                     <i data-lucide="app-window" class="w-5 h-5 inline mr-2"></i>
                     ကျွန်ုပ်တင်ထားသော App များကိုကြည့်ရန်
                 </button>
 
                 <button onclick="window.signOutUser()"
-                            class="w-full py-3 bg-gray-300 text-gray-800 font-bold rounded-lg hover:bg-gray-400 active:bg-gray-500 transition duration-150 shadow-lg mt-4">
+                            class="w-full py-3 bg-gray-300 text-gray-800 font-bold rounded-lg hover:bg-gray-400 active:bg-gray-500 transition duration-150 shadow-lg">
                     <i data-lucide="log-out" class="w-5 h-5 inline mr-2"></i>
                     ထွက်ရန် (Sign Out)
                 </button>
             </div>
             
-            <div id="profileEditSection" class="hidden">
-                </div>
+            <div id="profileEditSection" class="hidden"></div>
             
             <div class="mt-8 pt-4 border-t border-gray-200" id="adminPanel">
+                <h3 class="text-lg font-bold text-red-600 mb-3 flex items-center">
+                    <i data-lucide="shield-check" class="w-5 h-5 mr-2"></i>
+                    Admin Control
+                </h3>
+
+                <div id="adminPanelStatus" class="p-3 bg-red-100 rounded-lg hidden">
+                    <p class="text-sm font-semibold text-red-700">အုပ်ချုပ်သူအဖြစ် ဝင်ရောက်ထားပါသည်</p>
+                    <p class="text-xs text-red-500">App အားလုံးကို ဖြုတ်/ပြင်ဆင်နိုင်ပါသည်။</p>
                 </div>
-            
+            </div>
+            </div>
+    </div>
+    
+    <div id="submitAppModal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto modal-content">
+            <div class="flex justify-between items-center border-b pb-3 mb-6">
+                <h2 class="text-2xl font-bold text-gray-800 flex items-center">
+                    <i data-lucide="cloud-upload" class="w-6 h-6 mr-2 text-play-green"></i>
+                    App တင်သွင်းရန်
+                </h2>
+                <button id="closeModalBtn" class="text-gray-400 hover:text-gray-600 transition" title="ပိတ်ရန်">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+
+            <form id="appSubmissionForm" class="space-y-4">
+                
+                <div class="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                    <p class="text-xs font-semibold text-yellow-800 mb-2">တင်သွင်းသူ အချက်အလက် (Google Profile မှ အလိုအလျောက် ရယူပါမည်)</p>
+                    <input type="text" id="submitterNameInput" readonly class="w-full p-2 text-sm bg-white border border-gray-200 rounded-md mb-1 text-gray-600" title="သင့် Google Profile နာမည်။">
+                    <input type="email" id="submitterEmailInput" readonly class="w-full p-2 text-sm bg-white border border-gray-200 rounded-md text-gray-600" title="သင့် Google Email။">
+                </div>
+
+                <div>
+                    <label for="appName" class="block text-sm font-medium text-gray-700 mb-1">App နာမည် <span class="text-red-500">*</span></label>
+                    <input type="text" id="appName" required placeholder="ဥပမာ: Burmese Keyboard Pro"
+                                 class="w-full p-3 border border-gray-300 rounded-lg focus:ring-active-blue focus:border-active-blue shadow-sm">
+                </div>
+
+                <div>
+                    <label for="appDescription" class="block text-sm font-medium text-gray-700 mb-1">ဖော်ပြချက် (အကျဉ်း) <span class="text-red-500">*</span></label>
+                    <textarea id="appDescription" rows="3" required placeholder="App ရဲ့ အသုံးဝင်ပုံ၊ အင်္ဂါရပ်များကို ဖော်ပြပါ။"
+                                     class="w-full p-3 border border-gray-300 rounded-lg focus:ring-active-blue focus:border-active-blue shadow-sm resize-none"></textarea>
+                </div>
+
+                <div>
+                    <label for="appCategory" class="block text-sm font-medium text-gray-700 mb-1">အမျိုးအစား <span class="text-red-500">*</span></label>
+                    <select id="appCategory" required 
+                                 class="w-full p-3 border border-gray-300 rounded-lg focus:ring-active-blue focus:border-active-blue shadow-sm bg-white">
+                        <option value="Games">ဂိမ်း (Games)</option>
+                        <option value="Utility">အသုံးဝင်မှု (Utility)</option>
+                        <option value="Social">လူမှုရေး (Social)</option>
+                        <option value="Entertainment">ဖျော်ဖြေရေး (Entertainment)</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="mediaFireLink" class="block text-sm font-medium text-gray-700 mb-1">ဒေါင်းလုတ်လင့်ခ် (Google Drive / MediaFire / Mega) <span class="text-red-500">*</span></label>
+                    <input type="url" id="mediaFireLink" required placeholder="https://drive.google.com/..."
+                                 class="w-full p-3 border border-gray-300 rounded-lg focus:ring-active-blue focus:border-active-blue shadow-sm">
+                    <p class="text-xs text-gray-500 mt-1">လင့်ခ်ကို သေချာစွာ Public Share လုပ်ထားပါ။</p>
+                </div>
+
+                <div>
+                    <label for="iconUrl" class="block text-sm font-medium text-gray-700 mb-1">App Icon ပုံလင့်ခ် (URL) <span class="text-red-500">*</span></label>
+                    <input type="url" id="iconUrl" required placeholder="https://..."
+                                 class="w-full p-3 border border-gray-300 rounded-lg focus:ring-active-blue focus:border-active-blue shadow-sm">
+                    <p class="text-xs text-gray-500 mt-1">ကောင်းမွန်သော Icon တစ်ခုကို အသုံးပြုပါ။</p>
+                </div>
+                
+                <button type="submit" 
+                            class="w-full py-3 bg-play-green text-white font-bold rounded-lg hover:bg-active-blue active:bg-blue-700 transition duration-150 shadow-lg mt-6">
+                    <i data-lucide="send" class="w-5 h-5 inline mr-2"></i>
+                    App ကို တင်သွင်းရန်
+                </button>
+            </form>
         </div>
     </div>
     
-    </body>
+    <div id="editAppModal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto modal-content">
+            <div class="flex justify-between items-center border-b pb-3 mb-6">
+                <h2 class="text-2xl font-bold text-gray-800 flex items-center">
+                    <i data-lucide="wrench" class="w-6 h-6 mr-2 text-yellow-600"></i>
+                    Admin: App ပြင်ဆင်ရန်
+                </h2>
+                <button id="closeEditModalBtn" class="text-gray-400 hover:text-gray-600 transition" title="ပိတ်ရန်">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+
+            <form id="editAppForm" class="space-y-4">
+                <div>
+                    <label for="editAppName" class="block text-sm font-medium text-gray-700 mb-1">App နာမည် <span class="text-red-500">*</span></label>
+                    <input type="text" id="editAppName" required
+                                 class="w-full p-3 border border-gray-300 rounded-lg focus:ring-active-blue focus:border-active-blue shadow-sm">
+                </div>
+
+                <div>
+                    <label for="editAppDescription" class="block text-sm font-medium text-gray-700 mb-1">ဖော်ပြချက် (အကျဉ်း) <span class="text-red-500">*</span></label>
+                    <textarea id="editAppDescription" rows="3" required
+                                     class="w-full p-3 border border-gray-300 rounded-lg focus:ring-active-blue focus:border-active-blue shadow-sm resize-none"></textarea>
+                </div>
+
+                <div>
+                    <label for="editAppCategory" class="block text-sm font-medium text-gray-700 mb-1">အမျိုးအစား <span class="text-red-500">*</span></label>
+                    <select id="editAppCategory" required
+                                 class="w-full p-3 border border-gray-300 rounded-lg focus:ring-active-blue focus:border-active-blue shadow-sm bg-white">
+                        <option value="Games">ဂိမ်း (Games)</option>
+                        <option value="Utility">အသုံးဝင်မှု (Utility)</option>
+                        <option value="Social">လူမှုရေး (Social)</option>
+                        <option value="Entertainment">ဖျော်ဖြေရေး (Entertainment)</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="editMediaFireLink" class="block text-sm font-medium text-gray-700 mb-1">ဒေါင်းလုတ်လင့်ခ် <span class="text-red-500">*</span></label>
+                    <input type="url" id="editMediaFireLink" required
+                                 class="w-full p-3 border border-gray-300 rounded-lg focus:ring-active-blue focus:border-active-blue shadow-sm">
+                </div>
+
+                <div>
+                    <label for="editIconUrl" class="block text-sm font-medium text-gray-700 mb-1">App Icon ပုံလင့်ခ် (URL) <span class="text-red-500">*</span></label>
+                    <input type="url" id="editIconUrl" required
+                                 class="w-full p-3 border border-gray-300 rounded-lg focus:ring-active-blue focus:border-active-blue shadow-sm">
+                </div>
+
+                <button type="submit"
+                            class="w-full py-3 bg-yellow-600 text-white font-bold rounded-lg hover:bg-yellow-700 transition duration-150 shadow-lg mt-6">
+                    <i data-lucide="check" class="w-5 h-5 inline mr-2"></i>
+                    App အချက်အလက်များ သိမ်းဆည်းရန်
+                </button>
+            </form>
+            
+            <div class="mt-8 pt-4 border-t border-red-300">
+                <h3 class="text-lg font-bold text-red-600 mb-3 flex items-center">
+                    <i data-lucide="alert-triangle" class="w-5 h-5 mr-2"></i>
+                    အပြီးအပိုင် ဖြုတ်ဖျက်ခြင်း
+                </h3>
+                <p class="text-sm text-gray-600 mb-3">App နာမည် <strong class="text-red-600" id="deleteAppNameToConfirm">...</strong> ကို စတိုးမှ အပြီးအပိုင် ဖျက်ပစ်လိုပါက အောက်ပါအတိုင်း ဆောင်ရွက်ပါ။</p>
+                <div id="deleteConfirmationArea">
+                    <label for="deleteConfirmationInput" class="block text-sm font-medium text-red-700 mb-1">ဖြုတ်ဖျက်ရန် App နာမည်ကို ရိုက်ထည့်ပါ</label>
+                    <input type="text" id="deleteConfirmationInput" placeholder="App ၏နာမည်အတိုင်း ရိုက်ထည့်ပါ"
+                                 class="w-full p-3 border border-red-400 rounded-lg focus:ring-red-500 focus:border-red-500 shadow-sm text-red-700">
+                    
+                    <button onclick="window.confirmAndDelete()"
+                                 class="w-full py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition duration-150 shadow-lg mt-4">
+                        <i data-lucide="trash-2" class="w-5 h-5 inline mr-2"></i>
+                        App ကို ဖျက်ရန် အတည်ပြုပါ
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="toastNotification" class="opacity-0 hidden"></div>
+    
+</body>
 </html>
